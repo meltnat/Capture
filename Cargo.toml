@@ -4,17 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ffmpeg-next = { version = "7.1.0", features = [] }
-ffmpeg-sys-next = { version = "7.1.0", features = [
-    "avcodec",
-    "avdevice",
-    "avfilter",
-    "avformat",
-    "swresample",
-    "swscale",
+clap = { version = "4.5.42", features = ["derive"] }
+ctrlc = "3.4.7"
+rusty_ffmpeg = { version = "0.16.3", features = [
+    "ffmpeg7",
+    "link_vcpkg_ffmpeg",
 ] }
 windows = { version = "0.61.3", features = [
-    "Foundation",
     "Graphics_Capture",
     "Graphics_DirectX_Direct3D11",
     "Security_Authorization_AppCapabilityAccess",
@@ -30,4 +26,5 @@ windows = { version = "0.61.3", features = [
     "Win32_System_Variant",
     "Win32_System_WinRT_Direct3D11",
     "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_WinRT_Graphics_Capture",
 ] }

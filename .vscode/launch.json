@@ -19,7 +19,17 @@
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "env": {
+                "RUST_BACKTRACE": "FULL",
+                "RUSTFLAGS": "-Ctarget-feature=+crt-static",
+                "FFMPEG_LIBS_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/lib",
+                "FFMPEG_INCLUDE_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/include"
+            },
+            "args": [
+                "-d",
+                "-u",
+                "rtmp://localhost/live/test"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {
