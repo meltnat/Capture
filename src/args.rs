@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use clap::Parser;
 #[derive(Parser, Debug)]
 #[command[version, about, long_about = None]]
@@ -29,7 +31,10 @@ pub struct Args {
     #[arg(short, long)]
     pub display: Option<Option<usize>>,
 
-    /* Stream Settings */
+    /* Video Stream Settings */
+    /// video encoder name
+    #[arg(long, default_value_t = {"libx264".to_string()})]
+    pub video_encoder: String,
     /// stream size
     #[arg(short, long, default_value_t = {"1920x1080".to_string()})]
     pub size: String,
@@ -39,8 +44,16 @@ pub struct Args {
     /// stream fps
     #[arg(long, default_value_t = 30)]
     pub fps: usize,
+    /// additional options for the video encoder
+    #[arg(long)]
+    pub video_options: Vec<String>,
+
+    /* Audio Stream Settings */
+    // audio encoder name
+    #[arg(long, default_value_t = {"aac".to_string()})]
+    pub audio_encoder: String,
     /// audio bit rate
-    #[arg(long, default_value_t = {"128k".to_string()})]
+    #[arg(long, default_value_t = {"192k".to_string()})]
     pub audio_bit_rate: String,
     /// sample rate
     #[arg(long, default_value_t = 44100)]
@@ -49,8 +62,10 @@ pub struct Args {
     #[arg(long, default_value_t = 2)]
     pub channels: usize,
     /// bytes per sample
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 4)]
     pub bytes_per_sample: usize,
+
+    /* Output Settings */
     /// target URL for the stream
     #[arg(short, long)]
     pub url: String,
@@ -104,5 +119,17 @@ impl Args {
             .replace("g", "000000000");
         norm.parse::<i64>()
             .map_err(|_| "Invalid audio bitrate".to_owned())
+    }
+
+    pub fn video_options(&self) -> HashMap<String, String> {
+        self.video_options
+            .iter()
+            .map(|opt| {
+                let mut parts = opt.splitn(2, '=');
+                let key = parts.next().unwrap_or("").to_string();
+                let value = parts.next().unwrap_or("").to_string();
+                (key, value)
+            })
+            .collect()
     }
 }

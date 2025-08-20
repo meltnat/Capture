@@ -1,52 +1,40 @@
-use std::{os::raw::c_void, ptr::null_mut};
+use tokio::sync::mpsc::Sender;
 
-use rusty_ffmpeg::ffi::{av_frame_alloc, memcpy, AVFrame, AV_PIX_FMT_BGRA};
-use windows::Win32::Graphics::Direct3D11::D3D11_MAP_READ;
+use crate::{input::Input, video::video_desktop::VideoDesktop};
+impl Input for VideoDesktop {
+    fn start(&mut self, sender: &Sender<Vec<u8>>) -> Result<(), Box<dyn std::error::Error>> {
+        let sender = sender.clone();
+        self.start(move |pool| {
+            let texture = Self::get_texture(pool);
+            if let Err(err) = texture {
+                eprintln!("Failed to get texture: {}", err);
+                return Err(err.into());
+            }
+            let texture = Self::staging(texture?);
+            if let Err(err) = texture {
+                eprintln!("Failed to stage texture: {}", err);
+                return Err(err.into());
+            }
+            let bytes = Self::to_bytes(texture?);
+            if let Err(err) = bytes {
+                eprintln!("Failed to convert texture to bytes: {}", err);
+                return Err(err.into());
+            }
+            let bytes = bytes?;
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let mut data = Vec::with_capacity(16 + bytes.len());
+            data.extend_from_slice(&ts.to_le_bytes());
+            data.extend_from_slice(&bytes);
 
-use crate::video::video_desktop::VideoDesktop;
-
-pub trait VideoInput {
-    fn start(&self) -> Result<(), Box<dyn std::error::Error>>;
-    fn capture(&self) -> Result<AVFrame, Box<dyn std::error::Error>>;
-    fn stop(&self) -> Result<(), Box<dyn std::error::Error>>;
-}
-
-impl VideoInput for VideoDesktop {
-    fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.start()?;
+            if let Err(err) = sender.blocking_send(data) {
+                eprintln!("Failed to send video frame: {}", err);
+            }
+            Ok(())
+        })?;
         Ok(())
-    }
-
-    fn capture(&self) -> Result<AVFrame, Box<dyn std::error::Error>> {
-        let texture = self.staging(&self.get_texture()?)?;
-
-        let mut frame = unsafe { *av_frame_alloc() };
-        frame.width = self.width() as i32;
-        frame.height = self.height() as i32;
-        frame.format = AV_PIX_FMT_BGRA;
-
-        let map = null_mut();
-        unsafe {
-            self.context()
-                .Map(&texture, 0, D3D11_MAP_READ, 0, Some(map))
-        }?;
-        let map = unsafe { *map };
-
-        let mut source = map.pData;
-        let src_pitch = map.RowPitch as usize;
-        let mut d = frame.data[0] as *mut c_void;
-        let copy = self.width() as u64 * 4;
-        let linesize = frame.linesize[0] as usize;
-
-        for _ in 0..self.height() {
-            unsafe { memcpy(d, source, copy) };
-            d = unsafe { d.add(linesize) };
-            source = unsafe { source.add(src_pitch) };
-        }
-
-        unsafe { self.context().Unmap(&texture, 0) };
-
-        Ok(frame)
     }
 
     fn stop(&self) -> Result<(), Box<dyn std::error::Error>> {

@@ -1,44 +1,61 @@
-use std::ptr::null_mut;
+use std::{
+    ffi::{c_char, CString},
+    ptr::{null_mut, NonNull},
+};
 
 use rusty_ffmpeg::ffi::{
-    avformat_alloc_context, avformat_alloc_output_context2, avformat_write_header, avio_close,
-    avio_open, AVFormatContext, AVFMT_NOFILE, AVIO_FLAG_WRITE,
+    av_write_trailer, avformat_alloc_output_context2, avformat_write_header, avio_close, avio_open,
+    AVFormatContext, AVFMT_NOFILE, AVIO_FLAG_WRITE,
 };
 
 pub struct Stream {
-    format_context: AVFormatContext,
+    format_context: NonNull<AVFormatContext>,
+    url: CString,
 }
 
 impl Stream {
-    pub fn new(url: &str) -> Self {
-        let mut _format_context = unsafe { avformat_alloc_context() };
+    pub fn new(url: CString) -> Self {
+        let mut format_context = null_mut();
         unsafe {
             avformat_alloc_output_context2(
-                &mut _format_context,
+                &mut format_context,
                 null_mut(),
-                b"flv\0".as_ptr() as *const i8,
-                url.as_ptr() as *const i8,
+                b"flv\0".as_ptr() as *const c_char,
+                url.as_ptr(),
             )
         };
-        let mut format_context = unsafe { *_format_context };
-        if (unsafe { *format_context.oformat }.flags & AVFMT_NOFILE as i32) != 0 {
-            unsafe {
+        Stream {
+            format_context: NonNull::new(format_context).unwrap(),
+            url,
+        }
+    }
+
+    pub fn start(&mut self) -> Result<(), String> {
+        if (unsafe { *self.format_context.as_ref().oformat }.flags & AVFMT_NOFILE as i32) == 0 {
+            let err = unsafe {
                 avio_open(
-                    &mut format_context.pb,
-                    url.as_ptr() as *const i8,
+                    &mut self.format_context.as_mut().pb,
+                    self.url.as_ptr(),
                     AVIO_FLAG_WRITE as i32,
                 )
             };
+            if err < 0 {
+                return Err(format!(
+                    "Failed to open output URL: {}",
+                    self.url.to_string_lossy()
+                ));
+            }
         }
-        unsafe { avformat_write_header(_format_context, null_mut()) };
-        Stream { format_context }
+        unsafe { avformat_write_header(self.format_context.as_ptr(), null_mut()) };
+        Ok(())
     }
 
-    pub fn context(&mut self) -> &mut AVFormatContext {
-        &mut self.format_context
+    pub fn context(&mut self) -> &NonNull<AVFormatContext> {
+        &self.format_context
     }
 
     pub fn stop(&mut self) {
-        unsafe { avio_close(self.format_context.pb) };
+        unsafe { av_write_trailer(self.format_context.as_ptr()) };
+        unsafe { avio_close(self.format_context.as_ref().pb) };
     }
 }

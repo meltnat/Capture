@@ -1,20 +1,22 @@
-use std::ptr::null_mut;
+use std::ptr::{null_mut, NonNull};
 
 use rusty_ffmpeg::ffi::{
-    av_frame_alloc, sws_getContext, sws_scale, AVFrame, SwsContext, SWS_BILINEAR,
+    av_frame_alloc, av_frame_get_buffer, sws_getContext, sws_scale, AVFrame, SwsContext,
+    SWS_BILINEAR,
 };
 
 use crate::video::video_format::VideoFormat;
 
 pub struct VideoEncoder {
-    format: VideoFormat,
-    sws: SwsContext,
+    input: VideoFormat,
+    output: VideoFormat,
+    sws: NonNull<SwsContext>,
 }
 
 impl VideoEncoder {
     pub fn new(input: VideoFormat, output: VideoFormat) -> Self {
         let sws = unsafe {
-            *sws_getContext(
+            sws_getContext(
                 input.width,
                 input.height,
                 input.pix_fmt,
@@ -28,28 +30,32 @@ impl VideoEncoder {
             )
         };
         VideoEncoder {
-            format: output,
-            sws,
+            input,
+            output,
+            sws: NonNull::new(sws).unwrap(),
         }
     }
 
-    pub fn encode(&mut self, input: &AVFrame) -> AVFrame {
-        let mut output = unsafe { *av_frame_alloc() };
-        output.format = self.format.pix_fmt;
-        output.width = self.format.width;
-        output.height = self.format.height;
-        output.pts = input.pts;
+    pub fn from_bytes(&mut self, bytes: &[u8]) -> AVFrame {
+        let mut frame = unsafe { *av_frame_alloc() };
+        frame.width = self.output.width;
+        frame.height = self.output.height;
+        frame.format = self.output.pix_fmt as i32;
+        unsafe { av_frame_get_buffer(&mut frame, 0) };
+
+        let src = [bytes.as_ptr(), null_mut(), null_mut(), null_mut()].as_ptr();
+        let stride = [self.input.width * 4, 0, 0, 0];
         unsafe {
             sws_scale(
-                &mut self.sws,
-                input.data.as_ptr() as *const *const u8,
-                input.linesize.as_ptr(),
+                self.sws.as_mut(),
+                src,
+                stride.as_ptr(),
                 0,
-                input.height,
-                output.data.as_mut_ptr(),
-                output.linesize.as_mut_ptr(),
+                self.input.height,
+                frame.data.as_mut_ptr(),
+                frame.linesize.as_mut_ptr(),
             )
         };
-        output
+        frame
     }
 }

@@ -20,35 +20,20 @@
                 }
             },
             "env": {
-                "RUST_BACKTRACE": "FULL",
+                "RUST_BACKTRACE": "1",
                 "RUSTFLAGS": "-Ctarget-feature=+crt-static",
-                "FFMPEG_LIBS_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/lib",
-                "FFMPEG_INCLUDE_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/include"
+                "FFMPEG_LIBS_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static-md/lib",
+                "FFMPEG_INCLUDE_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static-md/include"
             },
             "args": [
+                "-a",
+                "-m",
                 "-d",
+                "--video-encoder",
+                "h264_nvenc",
                 "-u",
                 "rtmp://localhost/live/test"
             ],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'Capture'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=Capture",
-                    "--package=Capture"
-                ],
-                "filter": {
-                    "name": "Capture",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
             "cwd": "${workspaceFolder}"
         }
     ]

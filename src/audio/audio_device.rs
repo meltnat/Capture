@@ -7,7 +7,7 @@ use windows::{
         Media::Audio::{
             eCapture, eConsole, eRender, EDataFlow, IAudioCaptureClient, IAudioClient3, IMMDevice,
             IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED,
-            AUDCLNT_STREAMFLAGS_LOOPBACK, DEVICE_STATE_ACTIVE, WAVE_FORMAT_PCM,
+            AUDCLNT_STREAMFLAGS_LOOPBACK, DEVICE_STATE_ACTIVE,
         },
         System::Com::{CoCreateInstance, CLSCTX_ALL},
     },
@@ -57,9 +57,9 @@ impl AudioDevice {
         e_data_flow: EDataFlow,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let audio_client: IAudioClient3 = unsafe { imm_device.Activate(CLSCTX_ALL, None) }?;
-        let mut wave_format = unsafe { *audio_client.GetMixFormat()? };
-        wave_format.wFormatTag = WAVE_FORMAT_PCM as u16;
-        wave_format.cbSize = 0;
+        let mut format = unsafe { *audio_client.GetMixFormat()? };
+        format.wFormatTag = 3;
+        format.cbSize = 0;
 
         unsafe {
             audio_client.Initialize(
@@ -71,7 +71,7 @@ impl AudioDevice {
                 },
                 HNS_BUFFER_DURATION,
                 0,
-                &wave_format,
+                &format,
                 None,
             )
         }?;
@@ -81,7 +81,7 @@ impl AudioDevice {
             capture_client,
             imm_device_enumerator: None,
             imm_device,
-            format: AudioFormat::from(wave_format),
+            format: AudioFormat::from(format),
         })
     }
     pub fn start(&self) -> Result<(), windows::core::Error> {
@@ -141,10 +141,6 @@ impl AudioDevice {
     }
     pub fn format(&self) -> &AudioFormat {
         &self.format
-    }
-    pub fn set_volume(&mut self, volume: f64) -> &mut Self {
-        self.format.volume = volume;
-        self
     }
 }
 

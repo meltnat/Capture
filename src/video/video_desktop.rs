@@ -1,6 +1,8 @@
 use core::fmt;
+use std::sync::{Arc, Mutex};
 use windows::{
-    core::{factory, Interface, BOOL},
+    core::{factory, Error, Interface, Ref, BOOL},
+    Foundation::TypedEventHandler,
     Graphics::{
         Capture::{
             Direct3D11CaptureFramePool, GraphicsCaptureAccess, GraphicsCaptureAccessKind,
@@ -13,34 +15,29 @@ use windows::{
         Graphics::{
             Direct3D::D3D_DRIVER_TYPE_HARDWARE,
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
-                D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+                D3D11CreateDevice, ID3D11Device, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::{
-                Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
-                IDXGIDevice,
-            },
+            Dxgi::IDXGIDevice,
             Gdi::{EnumDisplayMonitors, HDC, HMONITOR},
         },
-        System::{
-            Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED},
-            WinRT::{
-                Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess},
-                Graphics::Capture::IGraphicsCaptureItemInterop,
-            },
+        System::WinRT::{
+            Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess},
+            Graphics::Capture::IGraphicsCaptureItemInterop,
         },
     },
 };
 
 pub struct VideoDesktop {
-    session: GraphicsCaptureSession,
-    pool: Direct3D11CaptureFramePool,
-    device: ID3D11Device,
-    context: ID3D11DeviceContext,
+    session: Option<GraphicsCaptureSession>,
+    device: Option<ID3D11Device>,
+    pool: Option<Direct3D11CaptureFramePool>,
     item: GraphicsCaptureItem,
     width: usize,
     height: usize,
+    target_fps: u64,
+    last_instant: Arc<Mutex<std::time::Instant>>,
 }
 
 impl VideoDesktop {
@@ -74,14 +71,35 @@ impl VideoDesktop {
     }
 
     pub fn new(hmonitor: HMONITOR) -> Result<Self, Box<dyn std::error::Error>> {
-        // Initialize COM library
-        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         // Request access to graphics capture
         GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless)?.get()?;
-        // Create device
-        let (device, context) = unsafe {
-            let mut device: Option<ID3D11Device> = None;
-            let mut context: Option<ID3D11DeviceContext> = None;
+        // Create item
+        let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()?;
+        let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(hmonitor) }?;
+        let size = item.Size()?;
+        Ok(Self {
+            device: None,
+            pool: None,
+            session: None,
+            item,
+            width: size.Width as usize,
+            height: size.Height as usize,
+            target_fps: 0,
+            last_instant: Arc::new(Mutex::new(std::time::Instant::now())),
+        })
+    }
+
+    pub fn set_fps_limit(&mut self, fps: u64) -> &mut Self {
+        self.target_fps = fps;
+        self
+    }
+
+    pub fn start<F>(&mut self, mut callback: F) -> windows::core::Result<()>
+    where
+        F: FnMut(&Direct3D11CaptureFramePool) -> Result<(), Error> + Send + 'static,
+    {
+        let mut d3d_device: Option<ID3D11Device> = None;
+        unsafe {
             D3D11CreateDevice(
                 None,
                 D3D_DRIVER_TYPE_HARDWARE,
@@ -89,86 +107,122 @@ impl VideoDesktop {
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 None,
                 D3D11_SDK_VERSION,
-                Some(&mut device),
+                Some(&mut d3d_device),
                 None,
-                Some(&mut context),
-            )?;
-            (device.unwrap(), context.unwrap())
-        };
-        let d3d_device: IDirect3DDevice =
-            unsafe { CreateDirect3D11DeviceFromDXGIDevice(&device.cast::<IDXGIDevice>()?) }?
-                .cast()?;
-
-        // Create item
-        let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()?;
-        let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(hmonitor) }?;
-        let size = item.Size()?;
-
+                None,
+            )
+        }?;
+        let device = unsafe {
+            CreateDirect3D11DeviceFromDXGIDevice(
+                &d3d_device.as_ref().unwrap().cast::<IDXGIDevice>()?,
+            )
+        }?
+        .cast::<IDirect3DDevice>()?;
         // Create capture frame pool and session
-        let pool = Direct3D11CaptureFramePool::Create(
-            &d3d_device,
+        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &device,
             DirectXPixelFormat::B8G8R8A8UIntNormalized,
             2,
-            size,
+            self.item.Size()?,
         )?;
-        let session = pool.CreateCaptureSession(&item)?;
+        // FPS制限付きフレーム到着ハンドラを生成
+        let fps = self.target_fps;
+        let last_instant = Arc::clone(&self.last_instant);
+        let handler =
+            TypedEventHandler::new(move |pool: Ref<'_, Direct3D11CaptureFramePool>, _| {
+                let pool = pool.as_ref().unwrap();
+                if fps > 0 {
+                    let desired_interval =
+                        std::time::Duration::from_nanos(1_000_000_000u64 / fps as u64);
+                    let now = std::time::Instant::now();
+                    if let Ok(mut guard) = last_instant.lock() {
+                        let last = *guard;
+                        if now.duration_since(last) < desired_interval {
+                            let _ = pool.TryGetNextFrame();
+                            return Ok(());
+                        }
+                        *guard = now;
+                    } else {
+                        panic!("Failed to lock last_instant mutex");
+                    }
+                }
+                if let Err(err) = callback(pool) {
+                    eprintln!("Error occurred while processing frame: {}", err);
+                }
+                Ok(())
+            });
+        pool.FrameArrived(&handler)?;
+
+        let session = pool.CreateCaptureSession(&self.item)?;
         session.SetIsBorderRequired(false)?;
         session.SetIsCursorCaptureEnabled(true)?;
-        Ok(Self {
-            session,
-            pool,
-            device,
-            context,
-            item,
-            width: size.Width as usize,
-            height: size.Height as usize,
-        })
+        session.StartCapture()?;
+        self.device = d3d_device;
+        self.session = Some(session);
+        self.pool = Some(pool);
+        Ok(())
     }
 
-    pub fn start(&self) -> windows::core::Result<()> {
-        self.session.StartCapture()
+    pub fn get_texture(
+        pool: &Direct3D11CaptureFramePool,
+    ) -> windows::core::Result<ID3D11Texture2D> {
+        let frame = pool.TryGetNextFrame()?;
+        let surface = frame.Surface()?;
+        let access: IDirect3DDxgiInterfaceAccess = surface.cast()?;
+        unsafe { access.GetInterface::<ID3D11Texture2D>() }
+    }
+
+    pub fn staging(texture: ID3D11Texture2D) -> windows::core::Result<ID3D11Texture2D> {
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.GetDesc(&mut desc) };
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.BindFlags = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+        desc.MiscFlags = 0;
+
+        let device = unsafe { texture.GetDevice() }?;
+        let mut staging = None;
+        unsafe { device.CreateTexture2D(&desc, None, Some(&mut staging)) }?;
+        let context = unsafe { device.GetImmediateContext() }?;
+        let staging = staging.ok_or_else(|| windows::core::Error::from_win32())?;
+        unsafe { context.CopyResource(&staging, &texture) };
+        Ok(staging)
+    }
+
+    pub fn to_bytes(texture: ID3D11Texture2D) -> windows::core::Result<Vec<u8>> {
+        let context = unsafe { texture.GetDevice()?.GetImmediateContext() }?;
+
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.GetDesc(&mut desc) };
+        let height = desc.Height as usize;
+        let row = desc.Width as usize * 4;
+        let mut data = vec![0u8; height * row];
+        let mut dst = data.as_mut_ptr();
+
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe { context.Map(&texture, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }?;
+
+        let pitch = mapped.RowPitch as usize;
+        let mut src = mapped.pData as *const u8;
+
+        for _ in 0..height {
+            unsafe { dst.copy_from_nonoverlapping(src, row) };
+            src = unsafe { src.add(pitch) };
+            dst = unsafe { dst.add(row) };
+        }
+
+        unsafe { context.Unmap(&texture, 0) };
+        Ok(data)
     }
 
     pub fn stop(&self) -> windows::core::Result<()> {
-        self.session.Close()?;
-        self.pool.Close()?;
-        Ok(unsafe { CoUninitialize() })
-    }
-
-    pub fn get_texture(&self) -> Result<ID3D11Texture2D, Box<dyn std::error::Error>> {
-        let frame = self.pool.TryGetNextFrame();
-        let surface = frame?.Surface()?;
-        let access: IDirect3DDxgiInterfaceAccess = surface.cast()?;
-        Ok(unsafe { access.GetInterface::<ID3D11Texture2D>() }?)
-    }
-
-    pub fn staging(
-        &self,
-        texture: &ID3D11Texture2D,
-    ) -> Result<ID3D11Texture2D, Box<dyn std::error::Error>> {
-        let staging_desc = D3D11_TEXTURE2D_DESC {
-            Width: self.width as u32,
-            Height: self.height as u32,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_STAGING,
-            BindFlags: 0,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            MiscFlags: 0,
-        };
-        let mut staging_texture: Option<ID3D11Texture2D> = None;
-        unsafe {
-            self.device
-                .CreateTexture2D(&staging_desc, None, Some(&mut staging_texture))
-        }?;
-        let staging_texture = staging_texture.unwrap();
-        unsafe { self.context.CopyResource(&staging_texture, texture) };
-        Ok(staging_texture)
+        if let Some(session) = &self.session {
+            session.Close()?;
+        }
+        if let Some(pool) = &self.pool {
+            pool.Close()?;
+        }
+        Ok(())
     }
 
     pub fn width(&self) -> usize {
@@ -179,9 +233,6 @@ impl VideoDesktop {
     }
     pub fn bit_rate(&self, fps: usize) -> usize {
         self.width() * self.height() * 32 * fps
-    }
-    pub fn context(&self) -> &ID3D11DeviceContext {
-        &self.context
     }
 }
 
@@ -195,6 +246,7 @@ unsafe extern "system" fn monitor_enum_proc(
     monitors.push(hmonitor);
     BOOL::from(true)
 }
+
 impl fmt::Display for VideoDesktop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
