@@ -1,4 +1,4 @@
-$target = "x64-windows-static-md"
+$target = "x64-windows-static"
 $features = @(
     "core"
     "avcodec"
@@ -9,6 +9,7 @@ $features = @(
     "swscale"
     "x264"
     "nvcodec"
+    "ssh"
 ) -join ","
 
 # Uninstall FFmpeg with the specified features
@@ -16,6 +17,8 @@ vcpkg remove "ffmpeg:$target"
 
 # Install FFmpeg with the specified features
 vcpkg install "ffmpeg[$features]:$target"
+
+
 
 Pause
 

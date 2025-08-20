@@ -17,13 +17,13 @@
                 "filter": {
                     "name": "Capture",
                     "kind": "bin"
-                }
-            },
-            "env": {
-                "RUST_BACKTRACE": "1",
-                "RUSTFLAGS": "-Ctarget-feature=+crt-static",
-                "FFMPEG_LIBS_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static-md/lib",
-                "FFMPEG_INCLUDE_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static-md/include"
+                },
+                "env": {
+                    "RUST_BACKTRACE": "1",
+                    "RUSTFLAGS": "-Ctarget-feature=+crt-static",
+                    "FFMPEG_INCLUDE_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/include",
+                    "FFMPEG_LIBS_DIR": "${userHome}/Workspace/vcpkg/installed/x64-windows-static/lib",
+                },
             },
             "args": [
                 "-a",

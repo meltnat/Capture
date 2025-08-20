@@ -1,6 +1,6 @@
 [package]
 name = "Capture"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 build = "build.rs"
 
@@ -34,3 +34,10 @@ windows = { version = "0.61.3", features = [
     "Win32_System_WinRT_Graphics_Capture",
     "Win32_UI_Shell_PropertiesSystem",
 ] }
+
+[profile.release]
+panic = "abort"
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
