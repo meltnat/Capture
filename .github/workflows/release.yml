@@ -45,6 +45,9 @@ jobs:
         run: cargo build --release --target x86_64-pc-windows-msvc
         env:
           VCPKG_ROOT: C:\vcpkg
+          RUSTFLAGS: -Ctarget-feature=+crt-static
+          FFMPEG_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static\include
+          FFMPEG_LIBS_DIR: C:\vcpkg\installed\x64-windows-static\lib
 
       - name: Get version from Cargo.toml
         id: version

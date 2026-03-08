@@ -123,6 +123,10 @@ impl AudioStream {
             return;
         }
         let mut frame = frame.unwrap();
+        // AVFrame is self-referential: extended_data points into the data[] array of the same
+        // struct. After a move (unwrap), extended_data dangles to the old location, so we must
+        // re-point it to the current struct before passing to avcodec_send_frame.
+        frame.extended_data = frame.data.as_mut_ptr();
         if self.start == 0 {
             self.start = ts;
         }

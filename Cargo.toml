@@ -1,43 +1,43 @@
 [package]
 name = "Capture"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 build = "build.rs"
 
 [dependencies]
 clap = { version = "4.5.42", features = ["derive"] }
 rusty_ffmpeg = { version = "0.16.3", features = [
-    "ffmpeg7",
-    "link_vcpkg_ffmpeg",
+  "ffmpeg7",
+  "link_vcpkg_ffmpeg",
 ] }
 tokio = { version = "1.47.1", features = [
-    "macros",
-    "rt-multi-thread",
-    "signal",
-    "sync",
+  "macros",
+  "rt-multi-thread",
+  "signal",
+  "sync",
 ] }
 windows = { version = "0.61.3", features = [
-    "Graphics_Capture",
-    "Graphics_DirectX_Direct3D11",
-    "Security_Authorization_AppCapabilityAccess",
-    "Win32_Devices_FunctionDiscovery",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Direct3D11",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Gdi",
-    "Win32_Media_Audio",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_System_Com",
-    "Win32_System_Variant",
-    "Win32_System_WinRT_Direct3D11",
-    "Win32_System_WinRT_Graphics_Capture",
-    "Win32_UI_Shell_PropertiesSystem",
+  "Graphics_Capture",
+  "Graphics_DirectX_Direct3D11",
+  "Security_Authorization_AppCapabilityAccess",
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_System_WinRT_Direct3D11",
+  "Win32_System_WinRT_Graphics_Capture",
+  "Win32_UI_Shell_PropertiesSystem",
 ] }
 
 [profile.release]
-panic = "abort"
-strip = true
 opt-level = "z"
+strip = true
 lto = true
+panic = "abort"
 codegen-units = 1

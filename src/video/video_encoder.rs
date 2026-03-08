@@ -43,12 +43,12 @@ impl VideoEncoder {
         frame.format = self.output.pix_fmt as i32;
         unsafe { av_frame_get_buffer(&mut frame, 0) };
 
-        let src = [bytes.as_ptr(), null_mut(), null_mut(), null_mut()].as_ptr();
+        let src = [bytes.as_ptr(), null_mut(), null_mut(), null_mut()];
         let stride = [self.input.width * 4, 0, 0, 0];
         unsafe {
             sws_scale(
                 self.sws.as_mut(),
-                src,
+                src.as_ptr(),
                 stride.as_ptr(),
                 0,
                 self.input.height,
