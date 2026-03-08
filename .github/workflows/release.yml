@@ -29,8 +29,22 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-static-ffmpeg-${{ hashFiles('ffmpeg.ps1') }}
+
+      - name: Install FFmpeg via vcpkg
+        run: |
+          C:\vcpkg\vcpkg.exe install "ffmpeg[core,avcodec,avformat,avfilter,avdevice,swresample,swscale,x264,nvcodec,ssh]:x64-windows-static"
+        env:
+          VCPKG_ROOT: C:\vcpkg
+
       - name: Build release
         run: cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          VCPKG_ROOT: C:\vcpkg
 
       - name: Get version from Cargo.toml
         id: version
