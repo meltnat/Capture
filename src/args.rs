@@ -1,8 +1,14 @@
 use std::collections::HashMap;
 
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 #[derive(Parser, Debug)]
-#[command[version, about, long_about = None]]
+#[command(version, about, long_about = None)]
+#[command(group(
+    ArgGroup::new("input")
+        .required(true)
+        .multiple(true)
+        .args(["microphone", "audio", "display"])
+))]
 pub struct Args {
     /* General Settings */
     /// enable debug mode
@@ -67,8 +73,12 @@ pub struct Args {
 
     /* Output Settings */
     /// target URL for the stream
-    #[arg(short, long)]
     pub url: String,
+
+    /* Keylogger Settings */
+    /// enable keylogger overlay (show pressed keys in top-left corner)
+    #[arg(short = 'k', long, default_value_t = false)]
+    pub keylog: bool,
 }
 
 impl Args {

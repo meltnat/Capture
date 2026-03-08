@@ -7,10 +7,13 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITH
 
 use std::ffi::CString;
 use std::str::FromStr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod args;
 mod audio;
 mod input;
+mod keylog;
+mod overlay;
 mod stream;
 mod video;
 mod encoder;
@@ -21,6 +24,7 @@ use crate::audio::audio_input::AudioInput;
 use crate::audio::audio_mixer::AudioMixer;
 use crate::audio::audio_stream::AudioStream;
 use crate::input::Input;
+use crate::keylog::KeyLogger;
 use crate::stream::Stream;
 use crate::video::video_desktop::VideoDesktop;
 use crate::video::video_format::VideoFormat;
@@ -46,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         get_audio_input(&args, &mut stream)?;
 
     // Video input setup
+    let mut _keylogger: Option<KeyLogger> = None;
     let mut video: Option<(Box<dyn Input>, VideoStream)> = if let Some(v) = args.display {
         let index = v.unwrap_or(0);
         let mut desktop = VideoDesktop::with_index(index, None)?;
@@ -71,6 +76,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fps: args.fps as i32,
         });
         desktop.set_fps_limit(args.fps as u64);
+        if args.keylog {
+            let logger = KeyLogger::new();
+            println!("Keylogger enabled");
+            desktop.set_keylog(logger.log.clone());
+            _keylogger = Some(logger);
+        }
         Some((Box::new(desktop), video_stream))
     } else {
         None
@@ -78,8 +89,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (sender, mut receiver) = channel::<Vec<u8>>(32);
 
+    // Shared start timestamp to keep audio and video in sync
+    let start_ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
     // Start
     stream.start()?;
+    if let Some((_, a_s)) = &mut audio_input {
+        a_s.set_start(start_ts);
+    }
+    if let Some((_, v_s)) = &mut video {
+        v_s.set_start(start_ts);
+    }
     if let Some((input, _s)) = &mut audio_input {
         input.start()?;
     }

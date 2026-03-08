@@ -117,6 +117,10 @@ impl AudioStream {
         Some(frame)
     }
 
+    pub fn set_start(&mut self, ts: u128) {
+        self.start = ts;
+    }
+
     pub fn write(&mut self, ts: u128, frame: &AVFrame) {
         let frame = self.push(frame);
         if frame.is_none() {
@@ -158,7 +162,10 @@ impl AudioStream {
                     self.stream.as_ref().time_base,
                 )
             };
-            unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            let err = unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            if err < 0 {
+                eprintln!("Failed to write audio frame: {}", err);
+            }
             unsafe { av_packet_unref(&mut packet) };
         }
     }
@@ -181,7 +188,10 @@ impl AudioStream {
                     self.stream.as_ref().time_base,
                 )
             };
-            unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            let err = unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            if err < 0 {
+                eprintln!("Failed to write audio frame on stop: {}", err);
+            }
             unsafe { av_packet_unref(&mut packet) };
         }
     }

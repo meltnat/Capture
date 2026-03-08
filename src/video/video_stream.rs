@@ -26,6 +26,7 @@ pub struct VideoStream {
     format: VideoFormat,
     encoder: Option<VideoEncoder>,
     start: u128,
+    next_pts: i64,
 }
 
 impl VideoStream {
@@ -92,7 +93,12 @@ impl VideoStream {
             format,
             encoder: None,
             start: 0,
+            next_pts: 0,
         }
+    }
+
+    pub fn set_start(&mut self, ts: u128) {
+        self.start = ts;
     }
 
     pub fn write(&mut self, ts: u128, frame: &mut AVFrame) {
@@ -101,7 +107,11 @@ impl VideoStream {
         }
         frame.time_base = unsafe { self.stream.as_ref() }.time_base;
         let pts = (ts - self.start) * self.format.fps as u128 / 1_000_000_000;
-        frame.pts = pts as i64;
+        if pts as i64 > self.next_pts {
+            self.next_pts = pts as i64;
+        }
+        frame.pts = self.next_pts;
+        self.next_pts += 1;
 
         frame.extended_data = frame.data.as_mut_ptr();
 
@@ -126,7 +136,10 @@ impl VideoStream {
                     self.stream.as_ref().time_base,
                 )
             };
-            unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            let err = unsafe { av_interleaved_write_frame(self.format_context.as_mut(), &mut packet) };
+            if err < 0 {
+                eprintln!("Failed to write video frame: {}", err);
+            }
             unsafe { av_packet_unref(&mut packet) };
         }
         unsafe { av_frame_unref(frame) };
@@ -171,7 +184,8 @@ impl VideoStream {
         } else {
             while let Some(data) = receiver.recv().await {
                 let (ts, frame_data) = split_time(&data);
-                self.write(ts, &mut self.format.from_bytes(frame_data));
+                let mut frame = self.format.from_bytes(frame_data);
+                self.write(ts, &mut frame);
             }
         }
         Ok(())

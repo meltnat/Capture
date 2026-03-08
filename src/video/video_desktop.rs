@@ -29,6 +29,8 @@ use windows::{
     },
 };
 
+use crate::keylog::KeyLog;
+
 pub struct VideoDesktop {
     session: Option<GraphicsCaptureSession>,
     device: Option<ID3D11Device>,
@@ -38,6 +40,7 @@ pub struct VideoDesktop {
     height: usize,
     target_fps: u64,
     last_instant: Arc<Mutex<std::time::Instant>>,
+    pub keylog: Option<Arc<Mutex<KeyLog>>>,
 }
 
 impl VideoDesktop {
@@ -86,11 +89,17 @@ impl VideoDesktop {
             height: size.Height as usize,
             target_fps: 0,
             last_instant: Arc::new(Mutex::new(std::time::Instant::now())),
+            keylog: None,
         })
     }
 
     pub fn set_fps_limit(&mut self, fps: u64) -> &mut Self {
         self.target_fps = fps;
+        self
+    }
+
+    pub fn set_keylog(&mut self, keylog: Arc<Mutex<KeyLog>>) -> &mut Self {
+        self.keylog = Some(keylog);
         self
     }
 

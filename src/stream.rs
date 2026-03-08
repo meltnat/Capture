@@ -46,7 +46,10 @@ impl Stream {
                 ));
             }
         }
-        unsafe { avformat_write_header(self.format_context.as_ptr(), null_mut()) };
+        let err = unsafe { avformat_write_header(self.format_context.as_ptr(), null_mut()) };
+        if err < 0 {
+            return Err(format!("Failed to write stream header: {}", err));
+        }
         Ok(())
     }
 
